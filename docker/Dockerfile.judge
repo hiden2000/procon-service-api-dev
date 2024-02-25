@@ -1,0 +1,41 @@
+# Goアプリケーション用のステージ
+FROM golang:1.20 as goapp
+
+WORKDIR /app
+
+COPY go.mod ./
+COPY go.sum ./
+
+RUN go mod download
+
+COPY . ./
+
+RUN go build -o /procon-judge-service ./src/judge/main.go
+
+# 実行用のステージ
+FROM ubuntu:latest
+
+# 必要な言語のランタイムとライブラリをインストール
+# docker cliをインストールしてコンテナ内部でdocker cliを使えるよう設定
+# 最初に必要なランタイムとライブラリ（Python 3, Java 11 JDK, G++, Rustc）をインストール
+# Dockerの公式GPGキーを追加し，Dockerのリポジトリをリストに追加してから，docker-ce-cli（Docker CLI）をインストールすることで，judge-server コンテナ内で Docker コマンドが利用可能
+RUN apt-get update && apt-get install -y \
+    python3 \
+    openjdk-11-jdk \
+    g++ \
+    rustc \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
+# ビルドした実行ファイルをコピー
+COPY --from=goapp /procon-judge-service /procon-judge-service
+
+CMD ["/procon-judge-service"]

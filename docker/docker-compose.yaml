@@ -1,0 +1,106 @@
+version: '3'
+
+services:
+  web-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    environment:
+      JUDGE_SERVER_URL: "http://judge-server:8080/judge"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_USE_SSL: "false" # 開発環境なのでfalse
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    networks:
+      - default
+      - internal
+
+  db:
+    platform: linux/x86_64
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../src/web/database/initialization.sql:/docker-entrypoint-initdb.d/initialization.sql
+    networks:
+      - internal
+
+  judge-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.judge
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_USE_SSL: "false" # 開発環境なのでfalse
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    volumes:
+      - /tmp:/tmp
+      - /var/run/docker.sock:/var/run/docker.sock # コンテナ内からDockerデーモンに接続するためにホスト上で動作しているDockerデーモンへのアクセスをコンテナ内から可能に設定
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    security_opt:
+      - seccomp:unconfined
+    networks:
+      - internal
+
+  minio:
+    image: minio/minio
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    command: server /data
+    networks:
+      - internal
+
+  create-bucket: # MinIO内部にバケットを作成するためのヘルパーコンテナ
+    image: minio/mc
+    depends_on:
+      - minio
+    volumes:
+      - ./create-minio-bucket.sh:/create-minio-bucket.sh
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME}
+    entrypoint: ["/bin/sh", "-c", "./create-minio-bucket.sh && tail -f /dev/null"]
+    networks:
+      - internal
+
+  redis:
+    image: redis:latest
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  minio-data:
+  redis-data:

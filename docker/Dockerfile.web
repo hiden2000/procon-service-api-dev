@@ -1,0 +1,21 @@
+# Goアプリケーション用のステージ
+FROM golang:1.20 as goapp
+
+WORKDIR /app
+
+COPY go.mod ./
+COPY go.sum ./
+
+RUN go mod download
+
+COPY . ./
+
+RUN go build -o /procon-web-service ./src/web/main.go
+
+# 実行用のステージ
+FROM ubuntu:latest
+
+# ビルドした実行ファイルをコピー
+COPY --from=goapp /procon-web-service /procon-web-service
+
+CMD ["/procon-web-service"]
